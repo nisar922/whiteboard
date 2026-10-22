@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
 import bcrypt
-from jose import jwt
+from jose import jwt,  JWTError
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
@@ -40,3 +41,20 @@ async def login(data: UserCreate, db: AsyncSession = Depends(get_db)):
     if not user or not verify_password(data.password, user.hashed_password):
         raise HTTPException(401, "Invalid email or password")
     return {"access_token": create_token(user.id), "token_type": "bearer"}
+
+
+bearer = HTTPBearer()
+
+async def get_current_user(
+        creds: HTTPAuthorizationCredentials = Depends(bearer),
+        db: AsyncSession = Depends(get_db),
+) -> User:
+    try:
+        payload = jwt.decode(creds.credentials, settings.SECRET_KEY, algorithms=["HS256"])
+        user_id = int(payload["sub"])
+    except(JWTError, KeyError, ValueError):
+        raise HTTPException(401, "Invalid or expired tokek")
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(401, "User not found")
+    return user

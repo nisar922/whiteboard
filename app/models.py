@@ -1,6 +1,8 @@
-from sqlalchemy import String
+from sqlalchemy import String, ForeignKey, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
+from datetime import datetime
+from sqlalchemy.dialects.postgresql import JSONB
 
 class User(Base):
     __tablename__="users"
@@ -9,4 +11,14 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True)
     hashed_password: Mapped[str] = mapped_column(String(255))
 
-    
+
+class Board(Base):
+    __tablename__ ="boards"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column((String(255)))
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    state: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )    
+
