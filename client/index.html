@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <input id="token" placeholder="JWT token" size="40">
+  <input id="board" placeholder="board id" size="6" value="1">
+  <button onclick="connect()">Connect</button>
+  <span id="st">disconnected</span><br>
+  <button onclick="mode='pen'">Pen</button>
+  <button onclick="mode='erase'">Eraser</button>
+  <button onclick="undo()">Undo</button>
+  <button onclick="clearAll()">Clear all</button><br>
+  <canvas id="c" width="800" height="500" style="border:1px solid #000"></canvas>
+<script>
+const c = document.getElementById("c"), ctx = c.getContext("2d");
+const st = document.getElementById("st");
+let ws, mode = "pen", drawing = false, curId = null;
+const strokes = new Map();   // id -> [points]
+const mine = [];             // meri strokes (undo ke liye)
+
+function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
+function line(a, b) {
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+}
+function pos(e) {
+  const r = c.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+function redraw() {
+  ctx.clearRect(0, 0, c.width, c.height);
+  for (const pts of strokes.values())
+    for (let i = 1; i < pts.length; i++) line(pts[i - 1], pts[i]);
+}
+function addPoint(id, p) {
+  let pts = strokes.get(id);
+  if (!pts) { pts = []; strokes.set(id, pts); }
+  if (pts.length) line(pts[pts.length - 1], p);
+  pts.push(p);
+}
+function removeStroke(id) { if (strokes.delete(id)) redraw(); }
+
+function eraseAt(p) {
+  for (const [id, pts] of strokes) {
+    if (pts.some(q => Math.hypot(q.x - p.x, q.y - p.y) < 8)) {
+      removeStroke(id);
+      send({ type: "delete", id });
+      break;
+    }
+  }
+}
+function undo() {
+  const id = mine.pop();
+  if (!id) return;
+  removeStroke(id);
+  send({ type: "delete", id });
+}
+function clearAll() {
+  strokes.clear(); mine.length = 0; redraw();
+  send({ type: "clear" });
+}
+
+function connect() {
+  const t = document.getElementById("token").value.trim();
+  const id = document.getElementById("board").value.trim();
+  ws = new WebSocket(`ws://127.0.0.1:8000/ws/boards/${id}?token=${t}`);
+  ws.onopen = () => st.textContent = "connected";
+  ws.onclose = () => st.textContent = "disconnected";
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.type === "point") addPoint(m.id, m.p);
+    else if (m.type === "delete") removeStroke(m.id);
+    else if (m.type === "clear") { strokes.clear(); redraw(); }
+  };
+}
+
+c.onmousedown = e => {
+  drawing = true;
+  const p = pos(e);
+  if (mode === "erase") { eraseAt(p); return; }
+  curId = crypto.randomUUID();
+  mine.push(curId);
+  addPoint(curId, p);
+  send({ type: "point", id: curId, p });
+};
+c.onmousemove = e => {
+  if (!drawing) return;
+  const p = pos(e);
+  if (mode === "erase") { eraseAt(p); return; }
+  addPoint(curId, p);
+  send({ type: "point", id: curId, p });
+};
+c.onmouseup = c.onmouseleave = () => drawing = false;
+</script>
+</body>
+</html>
