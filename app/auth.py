@@ -1,0 +1,42 @@
+from datetime import datetime, timedelta, timezone
+import bcrypt
+from jose import jwt
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.config import settings
+from app.database import get_db
+from app.models import User
+from app.schemas import UserCreate, UserOut, Token
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+def hash_password(p: str) -> str:
+    return bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
+
+def verify_password(p: str, hashed: str) -> bool:
+    return bcrypt.checkpw(p.encode(), hashed.encode())
+
+def create_token(user_id: int) -> str:
+    exp = datetime.now(timezone.utc) + timedelta(hours=24)
+    payload = {"sub": str(user_id), "exp": exp}
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
+
+@router.post("/register", response_model=UserOut, status_code=201)
+async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.email == data.email))
+    if result.scalar_one_or_none():
+        raise HTTPException(400, "Email already registered")
+    user = User(email=data.email, hashed_password=hash_password(data.password))
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+@router.post("/login", response_model=Token)
+async def login(data: UserCreate, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.email == data.email))
+    user = result.scalar_one_or_none()
+    if not user or not verify_password(data.password, user.hashed_password):
+        raise HTTPException(401, "Invalid email or password")
+    return {"access_token": create_token(user.id), "token_type": "bearer"}
