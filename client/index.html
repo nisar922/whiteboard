@@ -69,6 +69,11 @@ function connect() {
     if (m.type === "point") addPoint(m.id, m.p);
     else if (m.type === "delete") removeStroke(m.id);
     else if (m.type === "clear") { strokes.clear(); redraw(); }
+    else if (m.type === "init") {
+      strokes.clear();
+      for (const[id, pts] of Object.entries(m.strokes)) strokes.set(id ,pts);
+      redraw();
+    }
   };
 }
 
@@ -88,7 +93,10 @@ c.onmousemove = e => {
   addPoint(curId, p);
   send({ type: "point", id: curId, p });
 };
-c.onmouseup = c.onmouseleave = () => drawing = false;
+c.onmouseup = c.onmouseleave = () => {
+  if (drawing && mode === "pen") send({type: "end"});
+  drawing = false;
+};
 </script>
 </body>
 </html>

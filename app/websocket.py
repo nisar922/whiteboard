@@ -27,6 +27,22 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+states: dict[int, dict]={}
+
+async def load_state(board_id: int) ->dict:
+    if board_id not in states:
+        async with SessionLocal() as db:
+            board = await db.get(Board, board_id)
+            states[board_id] = dict((board.state or {}).get("strokes",{}))
+    return states[board_id] 
+
+async def save_state(borad_id: int):
+    async with SessionLocal() as db:
+        borad = await db.get(Board, borad_id)
+        if borad:
+            borad.state = {"strokes": states.get(borad_id, {})}
+            await db.commit() 
+
 @router.websocket("/ws/boards/{board_id}")
 async def board_ws(websocket: WebSocket, board_id: int, token: str):
     try:
@@ -42,9 +58,30 @@ async def board_ws(websocket: WebSocket, board_id: int, token: str):
         await websocket.close(code=1008)
         return
     await manager.connect(board_id, websocket)
+    strokes = await load_state(board_id)
+    await websocket.send_json({"type": "init", "strokes": strokes})
     try:
         while True:
             data = await websocket.receive_json()
+            t = data.get("type")
+            if t == "point":
+                strokes.setdefault(data["id"], []).append(data["p"])
+            elif t == "delete":
+                strokes.pop(data["id"],None)
+                await save_state(board_id)
+            elif t == "clear":
+                strokes.clear()
+                await save_state(board_id)
+            elif t == "end":
+                await save_state(board_id)
+                continue            
             await manager.broadcast(board_id, data, websocket)
     except WebSocketDisconnect:
         manager.disconnect(board_id, websocket)
+        if board_id not in manager.rooms:
+            await save_state(board_id)
+            states.pop(board_id, None)
+
+
+
+
