@@ -22,3 +22,12 @@ class Board(Base):
         DateTime(timezone=True), server_default=func.now()
     )    
 
+class BoardMember(Base):
+    __tablename__="board_members"
+
+    board_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"), primary_key=True
+    )

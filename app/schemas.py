@@ -23,4 +23,6 @@ class BoardOut(BaseModel):
     title : str
     owner_id : str    
     created_at: datetime
-    
+
+class ShareRequest(BaseModel):
+    email: EmailStr    

@@ -4,6 +4,7 @@ from jose import jwt, JWTError
 from app.config import settings
 from app.database import SessionLocal
 from app.models import Board
+from app.access import has_access
 
 router = APIRouter()
 
@@ -54,7 +55,8 @@ async def board_ws(websocket: WebSocket, board_id: int, token: str):
 
     async with SessionLocal() as db:
         board = await db.get(Board, board_id)
-    if not board or board.owner_id != user_id:
+        allowed = await db.get(Board, board_id)
+    if not allowed:
         await websocket.close(code=1008)
         return
     await manager.connect(board_id, websocket)
