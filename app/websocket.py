@@ -6,7 +6,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from jose import jwt, JWTError
 from app.config import settings
 from app.database import SessionLocal
-from app.models import Board
+from app.models import Board,User
 from app.access import has_access
 
 router = APIRouter()
@@ -64,6 +64,12 @@ async def publish(board_id: int, data: dict):
         f"board:{board_id}", json.dumps({"sid": SERVER_ID, "data": data})
     )
 
+async def broadcast_presence(board_id:int):
+    member = await redis.hgetall(f"presence:{board_id}")
+    msg = {"type":"presence","users": sorted(set(member.values()))}
+    await manager.broadcast(board_id, msg)
+    await publish(board_id, msg)     
+
 async def redis_listener():
     pubsub = redis.pubsub()
     await pubsub.psubscribe("board:*")
@@ -96,34 +102,40 @@ async def board_ws(websocket: WebSocket, board_id: int, token: str):
     async with SessionLocal() as db:
         board = await db.get(Board, board_id)
         allowed = await db.get(Board, board_id)
-    if not allowed:
+        user = await db.get(User, user_id)
+    if not allowed or not user:
         await websocket.close(code=1008)
         return
+    email = user.email
+    conn_id = uuid.uuid4().hex[:8]
+
     await manager.connect(board_id, websocket)
     strokes = await load_state(board_id)
     await websocket.send_json({"type": "init", "strokes": strokes})
+    await redis.hset(f"presence:{board_id}", conn_id, email)
+    await broadcast_presence(board_id)
     try:
         while True:
             data = await websocket.receive_json()
             t = data.get("type")
-            if t == "point":
-                strokes.setdefault(data["id"], []).append(data["p"])
-            elif t == "delete":
-                strokes.pop(data["id"],None)
-                await save_state(board_id)
-            elif t == "clear":
-                strokes.clear()
-                await save_state(board_id)
-            elif t == "end":
-                await save_state(board_id)
-                continue            
+            if t == "cursor":
+                data = {"type": "cursor", "u": email,
+                        "x": data.get("x"), "y": data.get("y")}
+            else:
+                apply_event(strokes, data)
+                if t in ("delete", "clear", "end"):
+                    await save_state(board_id)
+                if t == "end":
+                    continue
             await manager.broadcast(board_id, data, websocket)
+            await publish(board_id, data)
     except WebSocketDisconnect:
         manager.disconnect(board_id, websocket)
+        await redis.hdel(f"presence:{board_id}", conn_id)
+        await broadcast_presence(board_id)
         if board_id not in manager.rooms:
             await save_state(board_id)
             states.pop(board_id, None)
-
 
 
 

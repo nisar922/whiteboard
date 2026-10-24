@@ -8,35 +8,47 @@
   <button onclick="mode='pen'">Pen</button>
   <button onclick="mode='erase'">Eraser</button>
   <button onclick="undo()">Undo</button>
-  <button onclick="clearAll()">Clear all</button><br>
-  <canvas id="c" width="800" height="500" style="border:1px solid #000"></canvas>
+  <button onclick="clearAll()">Clear all</button>
+  <span id="users"></span><br>
+  <div id="wrap" style="position:relative;width:800px;height:500px">
+    <canvas id="c" width="800" height="500" style="border:1px solid #000"></canvas>
+  </div>
 <script>
 const c = document.getElementById("c"), ctx = c.getContext("2d");
 const st = document.getElementById("st");
-let ws, mode = "pen", drawing = false, curId = null;
-const strokes = new Map();   // id -> [points]
-const mine = [];             // meri strokes (undo ke liye)
+const wrap = document.getElementById("wrap");
+const usersEl = document.getElementById("users");
+let ws, mode = "pen", drawing = false, curId = null, lastCursor = 0;
+const strokes = new Map();
+const mine = [];
+const cursors = new Map();
 
-function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
+function send(m) {if (ws && ws.readyState === 1) ws.send(JSON.stringify(m));}
 function line(a, b) {
   ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+
 }
+
 function pos(e) {
   const r = c.getBoundingClientRect();
   return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
+
 function redraw() {
   ctx.clearRect(0, 0, c.width, c.height);
   for (const pts of strokes.values())
     for (let i = 1; i < pts.length; i++) line(pts[i - 1], pts[i]);
 }
+
 function addPoint(id, p) {
   let pts = strokes.get(id);
   if (!pts) { pts = []; strokes.set(id, pts); }
   if (pts.length) line(pts[pts.length - 1], p);
   pts.push(p);
 }
+
 function removeStroke(id) { if (strokes.delete(id)) redraw(); }
+
 
 function eraseAt(p) {
   for (const [id, pts] of strokes) {
@@ -47,16 +59,45 @@ function eraseAt(p) {
     }
   }
 }
+
 function undo() {
   const id = mine.pop();
   if (!id) return;
   removeStroke(id);
   send({ type: "delete", id });
 }
+
 function clearAll() {
   strokes.clear(); mine.length = 0; redraw();
   send({ type: "clear" });
 }
+
+function showCursor(u, x, y) {
+  let el = cursors.get(u);
+  if (!el) {
+    el = document.createElement("div");
+    el.style.cssText = "position:absolute;pointer-events:none;font:12px sans-serif;background:#e33;color:#fff;padding:1px 4px;border-radius:3px;white-space:nowrap";
+    el.textContent = u.split("@")[0];
+    wrap.appendChild(el);
+    cursors.set(u, el);
+  }
+  el.style.left = (x + 12) + "px";
+  el.style.top = (y + 12) + "px";
+}
+
+function pruneCursors(online) {
+  for (const [u, el] of cursors) {
+    if (!online.includes(u)) { el.remove(); cursors.delete(u); }
+  }
+}
+
+function sendCursor(p) {
+  const now = Date.now();
+  if (now - lastCursor < 40) return;
+  lastCursor = now;
+  send({ type: "cursor", x: p.x, y: p.y });
+}
+
 
 function connect() {
   const t = document.getElementById("token").value.trim();
@@ -72,11 +113,17 @@ function connect() {
     else if (m.type === "clear") { strokes.clear(); redraw(); }
     else if (m.type === "init") {
       strokes.clear();
-      for (const[id, pts] of Object.entries(m.strokes)) strokes.set(id ,pts);
+      for (const [sid, pts] of Object.entries(m.strokes)) strokes.set(sid, pts);
       redraw();
     }
+    else if (m.type === "presence") {
+      usersEl.textContent = " Online: " + m.users.join(", ");
+      pruneCursors(m.users);
+    }
+    else if (m.type === "cursor") showCursor(m.u, m.x, m.y);
   };
 }
+
 
 c.onmousedown = e => {
   drawing = true;
@@ -88,16 +135,18 @@ c.onmousedown = e => {
   send({ type: "point", id: curId, p });
 };
 c.onmousemove = e => {
-  if (!drawing) return;
   const p = pos(e);
+  sendCursor(p);
+  if (!drawing) return;
   if (mode === "erase") { eraseAt(p); return; }
   addPoint(curId, p);
   send({ type: "point", id: curId, p });
 };
 c.onmouseup = c.onmouseleave = () => {
-  if (drawing && mode === "pen") send({type: "end"});
+  if (drawing && mode === "pen") send({ type: "end" });
   drawing = false;
 };
+
 </script>
 </body>
 </html>
