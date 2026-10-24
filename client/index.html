@@ -61,7 +61,8 @@ function clearAll() {
 function connect() {
   const t = document.getElementById("token").value.trim();
   const id = document.getElementById("board").value.trim();
-  ws = new WebSocket(`ws://127.0.0.1:8000/ws/boards/${id}?token=${t}`);
+  const port = new URLSearchParams(location.search).get("port") || 8000;
+  ws = new WebSocket(`ws://127.0.0.1:${port}/ws/boards/${id}?token=${t}`);
   ws.onopen = () => st.textContent = "connected";
   ws.onclose = () => st.textContent = "disconnected";
   ws.onmessage = e => {

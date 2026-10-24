@@ -1,3 +1,6 @@
+import json
+import uuid
+import redis.asyncio as aioredis
 from collections import defaultdict
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from jose import jwt, JWTError
@@ -7,6 +10,8 @@ from app.models import Board
 from app.access import has_access
 
 router = APIRouter()
+redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+SERVER_ID = uuid.uuid4().hex
 
 class ConnectionManager:
     def __init__(self):
@@ -43,6 +48,41 @@ async def save_state(borad_id: int):
         if borad:
             borad.state = {"strokes": states.get(borad_id, {})}
             await db.commit() 
+
+def apply_event(strokes: dict, data: dict):
+    t = data.get("type")
+    if t == "point":
+        strokes.setdefault(data["id"], []).append(data["p"])
+    elif t == "delete":
+        strokes.pop(data["id"], None)
+    elif t == "clear":
+        strokes.clear()
+
+
+async def publish(board_id: int, data: dict):
+    await redis.publish(
+        f"board:{board_id}", json.dumps({"sid": SERVER_ID, "data": data})
+    )
+
+async def redis_listener():
+    pubsub = redis.pubsub()
+    await pubsub.psubscribe("board:*")
+    async for msg in pubsub.listen():
+        if msg["type"] != "pmessage":
+            continue
+        try:
+            payload = json.loads(msg["data"])
+            if payload["sid"] == SERVER_ID:
+                continue
+            board_id = int(msg["channel"].split(":")[1])
+            data = payload["data"]
+            strokes = states.get(board_id)
+            if strokes is not None:
+                apply_event(strokes, data)
+            await manager.broadcast(board_id, data)
+        except Exception as e:         
+            print("redis listener error:", e)
+
 
 @router.websocket("/ws/boards/{board_id}")
 async def board_ws(websocket: WebSocket, board_id: int, token: str):
