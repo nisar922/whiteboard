@@ -18,6 +18,7 @@ class Board(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column((String(255)))
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    join_code: Mapped[str] = mapped_column(String(8), unique=True)
     state: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )    

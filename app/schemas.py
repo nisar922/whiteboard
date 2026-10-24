@@ -21,8 +21,12 @@ class BoardOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id :int
     title : str
+    join_code : str
     owner_id : str    
     created_at: datetime
 
 class ShareRequest(BaseModel):
     email: EmailStr    
+
+class JoinRequest(BaseModel):
+    code : str    

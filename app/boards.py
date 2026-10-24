@@ -1,3 +1,4 @@
+import secrets
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -5,9 +6,18 @@ from app.access import has_access
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import Board, BoardMember, User
-from app.schemas import BoardCreate, BoardOut, ShareRequest
+from app.schemas import BoardCreate, BoardOut, ShareRequest ,JoinRequest
 
 router = APIRouter(prefix="/boards", tags=["boards"])
+
+ALPHABET = "ABCDEFGHIHKLMOPQRSTUVWXYZ23456789"
+
+async def new_join_code(db: AsyncSession) -> str:
+    while True:
+        code = "".join(secrets.choice(ALPHABET) for _ in range(6))
+        found = await db.execute(select(Board.id).where(Board.join_code == code))
+        if not found.scalar_one_or_none():
+            return code
 
 
 async def get_accessible_board(board_id: int, db: AsyncSession, user: User) -> Board:
@@ -19,7 +29,8 @@ async def get_accessible_board(board_id: int, db: AsyncSession, user: User) -> B
 @router.post("", response_model=BoardOut, status_code=201)
 async def create_board(data: BoardCreate, db: AsyncSession = Depends(get_db),
                        user: User = Depends(get_current_user)):
-    board = Board(title=data.title, owner_id=user.id)
+    board = Board(title=data.title, owner_id=user.id,
+                  join_code=await new_join_code(db))
     db.add(board)
     await db.commit()
     await db.refresh(board)
@@ -33,6 +44,19 @@ async def list_boards(db: AsyncSession = Depends(get_db),
         select(Board).where(or_(Board.owner_id == user.id, Board.id.in_(member_ids)))
     )
     return result.scalars().all()
+
+@router.post("/join", response_model=BoardOut)
+async def join_board(data: JoinRequest, db: AsyncSession = Depends(get_db),user: User = Depends(get_current_user)):
+    result = await db.execute(
+        select(Board).where(Board.join_code == data.code.strip().upper())
+    )
+    board = result.scalar_one_or_none()
+    if not board:
+        raise HTTPException(404, "Invalid room code")
+    if board.owner_id != user.id and not await db.get(BoardMember, (board.id, user.id)):
+        db.add(BoardMember(board_id=board.id, user_id=user.id))
+        await db.commit()
+    return board     
 
 @router.get("/{board_id}", response_model=BoardOut)
 async def get_board(board_id: int, db: AsyncSession = Depends(get_db),
@@ -58,6 +82,16 @@ async def share_board(board_id: int, data: ShareRequest,
         await db.commit()
     return {"detail": f"Shared with {data.email}"}
 
+@router.post("/{board_id}/regenerate-code", response_model=BoardOut)
+async def regenerate_code(board_id: int, db: AsyncSession = Depends(get_db),
+                          user: User = Depends(get_current_user)):
+    board = await db.get(Board, board_id)
+    if not board or board.owner_id != user.id:
+        raise HTTPException(404,"Board not found")
+    board.join_code = await new_join_code(db)
+    await db.commit()
+    await db.refresh()
+    return board
 
 @router.delete("/{board_id}", status_code=204)
 async def delete_board(board_id: int, db: AsyncSession = Depends(get_db),
