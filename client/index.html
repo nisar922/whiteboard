@@ -1,128 +1,230 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Whiteboard</title>
+<style>
+  :root { --bg:#eef1f6; --ink:#1f2937; --brand:#4f46e5; --muted:#6b7280; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden;
+    background: var(--bg); color: var(--ink);
+    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    padding: 8px 12px; background: #fff; border-bottom: 1px solid #e5e7eb;
+  }
+  header h1 { font-size: 18px; margin: 0 8px 0 0; }
+  input {
+    height: 44px; padding: 0 12px; border: 1px solid #d1d5db;
+    border-radius: 10px; font-size: 14px;
+  }
+  #token { flex: 1 1 180px; min-width: 120px; }
+  #board { width: 80px; }
+  button {
+    height: 44px; padding: 0 16px; border: 1px solid #d1d5db; background: #fff;
+    border-radius: 10px; font-size: 15px; cursor: pointer;
+  }
+  button:hover { background: #f3f4f6; }
+  button.primary { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600; }
+  button.primary:hover { background: #4338ca; }
+  button.active { background: #e0e7ff; border-color: var(--brand); color: var(--brand); font-weight: 600; }
+  #status { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+  #dot { width: 10px; height: 10px; border-radius: 50%; background: #ef4444; flex: none; }
+  #dot.on { background: #22c55e; }
+  #tools {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    padding: 8px 12px; background: var(--bg);
+  }
+  #users { margin-left: auto; font-size: 13px; color: var(--muted); }
+  #stage { flex: 1; min-height: 0; position: relative; overflow: hidden; background: #fff; }
+  canvas {
+    position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+    touch-action: none; cursor: crosshair; display: block;
+  }
+  .cursor {
+    position: absolute; left: 0; top: 0; pointer-events: none; white-space: nowrap;
+    font-size: 12px; background: #e11d48; color: #fff; padding: 1px 6px; border-radius: 4px;
+  }
+  @media (max-width: 600px) {
+    button { padding: 0 12px; }
+    header h1 { width: 100%; }
+  }
+</style>
+</head>
 <body>
-  <input id="token" placeholder="JWT token" size="40">
-  <input id="board" placeholder="board id" size="6" value="1">
-  <button onclick="connect()">Connect</button>
-  <span id="st">disconnected</span><br>
-  <button onclick="mode='pen'">Pen</button>
-  <button onclick="mode='erase'">Eraser</button>
-  <button onclick="undo()">Undo</button>
-  <button onclick="clearAll()">Clear all</button>
-  <span id="users"></span><br>
-  <div id="wrap" style="position:relative;width:800px;height:500px">
-    <canvas id="c" width="800" height="500" style="border:1px solid #000"></canvas>
+  <header>
+    <h1>Whiteboard</h1>
+    <input id="token" type="password" placeholder="JWT token" autocomplete="off">
+    <input id="board" type="number" placeholder="Board id" value="1">
+    <button class="primary" onclick="connect()">Connect</button>
+    <div id="status"><span id="dot"></span><span id="st">disconnected</span></div>
+  </header>
+  <div id="tools">
+    <button id="b-pen" class="active" onclick="setMode('pen')">✏️ Pen</button>
+    <button id="b-erase" onclick="setMode('erase')">🧽 Eraser</button>
+    <button id="b-hand" onclick="setMode('hand')">✋ Hand</button>
+    <button onclick="undo()">↩️ Undo</button>
+    <button onclick="clearAll()">🗑️ Clear</button>
+    <button onclick="goHome()">🏠 Home</button>
+    <span id="users"></span>
   </div>
+  <div id="stage"><canvas id="c"></canvas></div>
 <script>
-const c = document.getElementById("c"), ctx = c.getContext("2d");
-const st = document.getElementById("st");
-const wrap = document.getElementById("wrap");
-const usersEl = document.getElementById("users");
-let ws, mode = "pen", drawing = false, curId = null, lastCursor = 0;
-const strokes = new Map();
-const mine = [];
-const cursors = new Map();
-
-function send(m) {if (ws && ws.readyState === 1) ws.send(JSON.stringify(m));}
+const $ = id => document.getElementById(id);
+const c = $("c"), ctx = c.getContext("2d");
+const stage = $("stage");
+let ox = 0, oy = 0;                  // view offset (pan)
+let ws = null, mode = "pen", drawing = false, panning = false, panLast = null;
+let curId = null, lastCursor = 0;
+let retry = 0, fails = 0, everOpened = false, shouldReconnect = false;
+const strokes = new Map();           // id -> [points]
+const mine = [];                     // meri strokes (undo ke liye)
+const cursors = new Map();           // email -> {el, x, y}
+const uid = () => (window.crypto && crypto.randomUUID)
+  ? crypto.randomUUID()
+  : Date.now().toString(36) + Math.random().toString(36).slice(2);
+function setStatus(text, on) {
+  $("st").textContent = text;
+  $("dot").className = on ? "on" : "";
+}
+function setMode(m) {
+  mode = m;
+  for (const k of ["pen", "erase", "hand"])
+    $("b-" + k).classList.toggle("active", k === m);
+  c.style.cursor = m === "hand" ? "grab" : m === "erase" ? "pointer" : "crosshair";
+}
+function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
+/* ---------- drawing ---------- */
 function line(a, b) {
   ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-
 }
-
-function pos(e) {
-  const r = c.getBoundingClientRect();
-  return { x: e.clientX - r.left, y: e.clientY - r.top };
+function dot(p) {
+  ctx.beginPath(); ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2); ctx.fill();
 }
-
 function redraw() {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, c.width, c.height);
-  for (const pts of strokes.values())
+  ctx.restore();
+  for (const pts of strokes.values()) {
+    if (pts.length === 1) dot(pts[0]);
     for (let i = 1; i < pts.length; i++) line(pts[i - 1], pts[i]);
+  }
 }
-
 function addPoint(id, p) {
   let pts = strokes.get(id);
   if (!pts) { pts = []; strokes.set(id, pts); }
-  if (pts.length) line(pts[pts.length - 1], p);
+  if (pts.length) line(pts[pts.length - 1], p); else dot(p);
   pts.push(p);
 }
-
 function removeStroke(id) { if (strokes.delete(id)) redraw(); }
-
-
+function pos(e) {
+  const r = c.getBoundingClientRect();
+  return { x: e.clientX - r.left + ox, y: e.clientY - r.top + oy };
+}
 function eraseAt(p) {
   for (const [id, pts] of strokes) {
-    if (pts.some(q => Math.hypot(q.x - p.x, q.y - p.y) < 8)) {
+    if (pts.some(q => Math.hypot(q.x - p.x, q.y - p.y) < 14)) {
       removeStroke(id);
       send({ type: "delete", id });
       break;
     }
   }
 }
-
 function undo() {
   const id = mine.pop();
   if (!id) return;
   removeStroke(id);
   send({ type: "delete", id });
 }
-
 function clearAll() {
+  if (!confirm("Clear the whole board for everyone?")) return;
   strokes.clear(); mine.length = 0; redraw();
   send({ type: "clear" });
 }
-
+/* ---------- poori screen + pan ---------- */
+function applyView() {
+  const dpr = window.devicePixelRatio || 1;
+  ctx.setTransform(dpr, 0, 0, dpr, -ox * dpr, -oy * dpr);
+  ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.strokeStyle = "#111827"; ctx.fillStyle = "#111827";
+  redraw();
+  for (const cur of cursors.values()) placeCursor(cur);
+}
+function fit() {
+  const dpr = window.devicePixelRatio || 1;
+  c.width = Math.max(1, Math.floor(stage.clientWidth * dpr));
+  c.height = Math.max(1, Math.floor(stage.clientHeight * dpr));
+  applyView();
+}
+function goHome() { ox = 0; oy = 0; applyView(); }
+new ResizeObserver(fit).observe(stage);
+window.addEventListener("resize", fit);
+c.addEventListener("wheel", e => {
+  e.preventDefault();
+  ox += e.deltaX; oy += e.deltaY;
+  applyView();
+}, { passive: false });
+/* ---------- live cursors ---------- */
+function placeCursor(cur) {
+  cur.el.style.transform = `translate(${cur.x - ox + 10}px, ${cur.y - oy + 10}px)`;
+}
 function showCursor(u, x, y) {
-  let el = cursors.get(u);
-  if (!el) {
-    el = document.createElement("div");
-    el.style.cssText = "position:absolute;pointer-events:none;font:12px sans-serif;background:#e33;color:#fff;padding:1px 4px;border-radius:3px;white-space:nowrap";
+  let cur = cursors.get(u);
+  if (!cur) {
+    const el = document.createElement("div");
+    el.className = "cursor";
     el.textContent = u.split("@")[0];
-    wrap.appendChild(el);
-    cursors.set(u, el);
+    stage.appendChild(el);
+    cur = { el, x, y };
+    cursors.set(u, cur);
   }
-  el.style.left = (x + 12) + "px";
-  el.style.top = (y + 12) + "px";
+  cur.x = x; cur.y = y;
+  placeCursor(cur);
 }
-
 function pruneCursors(online) {
-  for (const [u, el] of cursors) {
-    if (!online.includes(u)) { el.remove(); cursors.delete(u); }
+  for (const [u, cur] of cursors) {
+    if (!online.includes(u)) { cur.el.remove(); cursors.delete(u); }
   }
 }
-
 function sendCursor(p) {
   const now = Date.now();
   if (now - lastCursor < 40) return;
   lastCursor = now;
   send({ type: "cursor", x: p.x, y: p.y });
 }
-
-let retry = 0, shouldReconnect = false;
-
+/* ---------- websocket ---------- */
 function connect() {
   if (ws) { ws.onclose = null; ws.close(); }
-  shouldReconnect = true;
-  retry = 0;
+  shouldReconnect = true; retry = 0; fails = 0; everOpened = false;
   openSocket();
 }
-
-
 function openSocket() {
-  const t = document.getElementById("token").value.trim();
-  const id = document.getElementById("board").value.trim();
+  const t = $("token").value.trim();
+  const id = $("board").value.trim();
   const port = new URLSearchParams(location.search).get("port") || 8000;
-  ws = new WebSocket(`ws://127.0.0.1:${port}/ws/boards/${id}?token=${t}`);
-  ws.onopen = () => { st.textContent = "connected"; retry = 0; };
+  const host = location.hostname || "127.0.0.1";
+  ws = new WebSocket(`ws://${host}:${port}/ws/boards/${id}?token=${encodeURIComponent(t)}`);
+  ws.onopen = () => { everOpened = true; retry = 0; fails = 0; setStatus("connected", true); };
   ws.onclose = ev => {
-    if (ev.code === 1008 || !shouldReconnect) {
+    if (ev.code === 1008) {
       shouldReconnect = false;
-      st.textContent = "rejected (bad token / no access / too many messages)";
+      setStatus("rejected (no access / too many messages)", false);
+      return;
+    }
+    if (!shouldReconnect) { setStatus("disconnected", false); return; }
+    if (!everOpened && ++fails >= 3) {
+      shouldReconnect = false;
+      setStatus("could not connect: check token, board id, server", false);
       return;
     }
     const delay = Math.min(1000 * 2 ** retry, 10000);
     retry++;
-    st.textContent = `reconnecting in ${delay / 1000}s...`;
+    setStatus(`reconnecting in ${delay / 1000}s...`, false);
     setTimeout(openSocket, delay);
   };
   ws.onmessage = e => {
@@ -136,13 +238,51 @@ function openSocket() {
       redraw();
     }
     else if (m.type === "presence") {
-      usersEl.textContent = " Online: " + m.users.join(", ");
+      $("users").textContent = "Online: " + m.users.join(", ");
       pruneCursors(m.users);
     }
     else if (m.type === "cursor") showCursor(m.u, m.x, m.y);
   };
 }
-
+/* ---------- mouse + touch + pen ---------- */
+c.addEventListener("pointerdown", e => {
+  c.setPointerCapture(e.pointerId);
+  if (mode === "hand") {
+    panning = true;
+    panLast = { x: e.clientX, y: e.clientY };
+    c.style.cursor = "grabbing";
+    return;
+  }
+  drawing = true;
+  const p = pos(e);
+  if (mode === "erase") { eraseAt(p); return; }
+  curId = uid();
+  mine.push(curId);
+  addPoint(curId, p);
+  send({ type: "point", id: curId, p });
+});
+c.addEventListener("pointermove", e => {
+  if (panning) {
+    ox -= e.clientX - panLast.x;
+    oy -= e.clientY - panLast.y;
+    panLast = { x: e.clientX, y: e.clientY };
+    applyView();
+  }
+  const p = pos(e);
+  sendCursor(p);
+  if (!drawing) return;
+  if (mode === "erase") { eraseAt(p); return; }
+  addPoint(curId, p);
+  send({ type: "point", id: curId, p });
+});
+function endStroke() {
+  if (panning) { panning = false; c.style.cursor = "grab"; }
+  if (drawing && mode === "pen") send({ type: "end" });
+  drawing = false;
+}
+c.addEventListener("pointerup", endStroke);
+c.addEventListener("pointercancel", endStroke);
+fit();
 </script>
 </body>
 </html>
