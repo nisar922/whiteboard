@@ -1,5 +1,6 @@
 import json
 import uuid
+import time
 import redis.asyncio as aioredis
 from collections import defaultdict
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -136,6 +137,36 @@ async def board_ws(websocket: WebSocket, board_id: int, token: str):
         if board_id not in manager.rooms:
             await save_state(board_id)
             states.pop(board_id, None)
-
-
-
+    try:
+        window_start = time.monotonic()
+        count = 0
+        while True:
+            data = await websocket.receive_json()
+            now = time.monotonic()
+            if now - window_start >= 1:
+                window_start, count = now, 0
+            count += 1
+            if count > 200:
+                await websocket.close(code=1008)
+                break
+            t = data.get("type")
+            if t == "cursor":
+                data = {"type": "cursor", "u": email,
+                        "x": data.get("x"), "y": data.get("y")}
+            else:
+                apply_event(strokes, data)
+                if t in ("delete", "clear", "end"):
+                    await save_state(board_id)
+                if t == "end":
+                    continue
+            await manager.broadcast(board_id, data, websocket)
+            await publish(board_id, data)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        manager.disconnect(board_id, websocket)
+        await redis.hdel(f"presence:{board_id}", conn_id)
+        await broadcast_presence(board_id)
+        if board_id not in manager.rooms:
+            await save_state(board_id)
+            states.pop(board_id, None)

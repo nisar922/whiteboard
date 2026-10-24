@@ -7,6 +7,7 @@ from app.auth import get_current_user
 from app.database import get_db
 from app.models import Board, BoardMember, User
 from app.schemas import BoardCreate, BoardOut, ShareRequest ,JoinRequest
+from app.ratelimit import limiter
 
 router = APIRouter(prefix="/boards", tags=["boards"])
 
@@ -45,7 +46,7 @@ async def list_boards(db: AsyncSession = Depends(get_db),
     )
     return result.scalars().all()
 
-@router.post("/join", response_model=BoardOut)
+@router.post("/join", response_model=BoardOut,dependencies=[Depends(limiter("join",10,60))])
 async def join_board(data: JoinRequest, db: AsyncSession = Depends(get_db),user: User = Depends(get_current_user)):
     result = await db.execute(
         select(Board).where(Board.join_code == data.code.strip().upper())

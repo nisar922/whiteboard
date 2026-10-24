@@ -9,6 +9,7 @@ from app.config import settings
 from app.database import get_db
 from app.models import User
 from app.schemas import UserCreate, UserOut, Token
+from app.ratelimit import limiter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -34,7 +35,7 @@ async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
     await db.refresh(user)
     return user
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=Token,dependencies=[Depends(limiter("login",10,60))])
 async def login(data: UserCreate, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == data.email))
     user = result.scalar_one_or_none()
