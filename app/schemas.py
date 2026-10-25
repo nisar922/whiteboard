@@ -22,7 +22,7 @@ class BoardOut(BaseModel):
     id :int
     title : str
     join_code : str
-    owner_id : str    
+    owner_id : int    
     created_at: datetime
 
 class ShareRequest(BaseModel):
