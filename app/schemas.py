@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, Field
 from datetime import datetime
 
 class UserCreate(BaseModel):
@@ -15,7 +15,8 @@ class Token(BaseModel):
     token_type: str
 
 class BoardCreate(BaseModel):
-    title: str
+    title: str = Field(min_length=1, max_length=100)
+    default_can_edit: bool = True
 
 class BoardOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)

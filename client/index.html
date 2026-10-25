@@ -5,100 +5,337 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Whiteboard</title>
 <style>
-  :root { --bg:#eef1f6; --ink:#1f2937; --brand:#4f46e5; --muted:#6b7280; }
+  :root { --bg:#eef1f6; --ink:#1f2937; --brand:#4f46e5; --muted:#6b7280; --line:#e5e7eb; }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
-  body {
-    display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden;
-    background: var(--bg); color: var(--ink);
-    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
-  }
-  header {
-    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-    padding: 8px 12px; background: #fff; border-bottom: 1px solid #e5e7eb;
-  }
-  header h1 { font-size: 18px; margin: 0 8px 0 0; }
-  input {
-    height: 44px; padding: 0 12px; border: 1px solid #d1d5db;
-    border-radius: 10px; font-size: 14px;
-  }
-  #token { flex: 1 1 180px; min-width: 120px; }
-  #board { width: 80px; }
-  button {
-    height: 44px; padding: 0 16px; border: 1px solid #d1d5db; background: #fff;
-    border-radius: 10px; font-size: 15px; cursor: pointer;
-  }
-  button:hover { background: #f3f4f6; }
+  body { background: var(--bg); color: var(--ink); overflow: hidden;
+         font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .screen { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+  .hidden { display: none !important; }
+  .grow { flex: 1; }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+         padding: 8px 12px; background: #fff; border-bottom: 1px solid var(--line); }
+  input:not([type=checkbox]) { height: 44px; padding: 0 12px; font-size: 16px; width: 100%;
+         border: 1px solid #d1d5db; border-radius: 10px; }
+  button { height: 44px; padding: 0 16px; font-size: 15px; cursor: pointer;
+           border: 1px solid #d1d5db; background: #fff; border-radius: 10px; }
+  button:hover:not(:disabled) { background: #f3f4f6; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
   button.primary { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600; }
-  button.primary:hover { background: #4338ca; }
+  button.primary:hover:not(:disabled) { background: #4338ca; }
   button.active { background: #e0e7ff; border-color: var(--brand); color: var(--brand); font-weight: 600; }
+  .card { background: #fff; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,.1); padding: 24px;
+          display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 400px; }
+  .card h1, .card h2, .card h3 { margin: 0; }
+  .sub, .hint { margin: 0; color: var(--muted); font-size: 13px; }
+  .msg { margin: 0; min-height: 1.2em; color: #dc2626; font-size: 14px; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  #auth { align-items: center; justify-content: center; padding: 16px; }
+  .home-body { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column;
+               align-items: center; gap: 16px; }
+  .cards { display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%; }
+  .cards .card { flex: none; }
+  #rooms-card { max-width: 400px; }
+  .row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+  .row span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row small { color: var(--muted); font-family: monospace; }
+  .title { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip { background: #eef2ff; color: var(--brand); border-radius: 8px; padding: 6px 10px;
+          font-family: monospace; font-weight: 600; cursor: pointer; }
   #status { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
-  #dot { width: 10px; height: 10px; border-radius: 50%; background: #ef4444; flex: none; }
+  #dot { width: 10px; height: 10px; border-radius: 50%; background: #ef4444; }
   #dot.on { background: #22c55e; }
-  #tools {
-    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-    padding: 8px 12px; background: var(--bg);
-  }
-  #users { margin-left: auto; font-size: 13px; color: var(--muted); }
+  #tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; }
+  #viewonly { color: #b45309; background: #fef3c7; padding: 6px 10px; border-radius: 8px; font-size: 13px; }
   #stage { flex: 1; min-height: 0; position: relative; overflow: hidden; background: #fff; }
-  canvas {
-    position: absolute; left: 0; top: 0; width: 100%; height: 100%;
-    touch-action: none; cursor: crosshair; display: block;
-  }
-  .cursor {
-    position: absolute; left: 0; top: 0; pointer-events: none; white-space: nowrap;
-    font-size: 12px; background: #e11d48; color: #fff; padding: 1px 6px; border-radius: 4px;
-  }
-  @media (max-width: 600px) {
-    button { padding: 0 12px; }
-    header h1 { width: 100%; }
-  }
+  canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block;
+           touch-action: none; cursor: crosshair; }
+  #panel { position: absolute; top: 8px; right: 8px; width: min(340px, calc(100% - 16px));
+           max-height: 75%; overflow: auto; background: #fff; border: 1px solid var(--line);
+           border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.18); padding: 12px; z-index: 5; }
+  #panel h4 { margin: 0 0 8px; }
+  .person { display: flex; align-items: center; gap: 8px; padding: 6px 0;
+            border-top: 1px solid var(--line); font-size: 14px; }
+  .person .pname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .person label { display: flex; align-items: center; gap: 4px; font-size: 13px; }
+  .person small { color: var(--muted); }
+  .pdot { width: 8px; height: 8px; border-radius: 50%; background: #9ca3af; flex: none; }
+  .pdot.on { background: #22c55e; }
+  .cursor { position: absolute; left: 0; top: 0; pointer-events: none; white-space: nowrap;
+            font-size: 12px; background: #e11d48; color: #fff; padding: 1px 6px; border-radius: 4px; z-index: 4; }
+  #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #111827;
+           color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 14px; z-index: 50; max-width: 90%; }
 </style>
 </head>
 <body>
-  <header>
+<section id="auth" class="screen hidden">
+  <div class="card">
     <h1>Whiteboard</h1>
-    <input id="token" type="password" placeholder="JWT token" autocomplete="off">
-    <input id="board" type="number" placeholder="Board id" value="1">
-    <button class="primary" onclick="connect()">Connect</button>
-    <div id="status"><span id="dot"></span><span id="st">disconnected</span></div>
+    <p class="sub">Draw together in real time</p>
+    <input id="email" type="email" placeholder="Email" autocomplete="username">
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password">
+    <button class="primary" onclick="doAuth(false)">Log in</button>
+    <button onclick="doAuth(true)">Create account</button>
+    <p id="auth-msg" class="msg"></p>
+  </div>
+</section>
+<section id="home" class="screen hidden">
+  <header class="bar">
+    <b>Whiteboard</b>
+    <span class="grow"></span>
+    <span id="me" class="sub"></span>
+    <button onclick="logout()">Log out</button>
+  </header>
+  <div class="home-body">
+    <div class="cards">
+      <div class="card">
+        <h2>Create room</h2>
+        <input id="room-name" type="text" placeholder="Room name" maxlength="100">
+        <label class="check"><input type="checkbox" id="room-default-edit" checked> Participants can draw by default</label>
+        <p class="hint">You can change this for each person later. Max 10 people per room.</p>
+        <button class="primary" onclick="createRoom()">Create room</button>
+      </div>
+      <div class="card">
+        <h2>Join room</h2>
+        <input id="join-code" type="text" placeholder="Enter room code" maxlength="8" autocomplete="off">
+        <button class="primary" onclick="joinRoom()">Join room</button>
+      </div>
+    </div>
+    <p id="home-msg" class="msg"></p>
+    <div id="rooms-card" class="card hidden">
+      <h3>Your rooms</h3>
+      <div id="rooms"></div>
+    </div>
+  </div>
+</section>
+<section id="room" class="screen hidden">
+  <header class="bar">
+    <button onclick="leaveRoom()">🏠 Home</button>
+    <b id="room-title" class="title"></b>
+    <span id="code-chip" class="chip hidden" onclick="copyCode()"></span>
+    <span class="grow"></span>
+    <span id="status"><span id="dot"></span><span id="st">connecting…</span></span>
+    <button onclick="togglePanel()">👥 <span id="online-n">0</span> online</button>
   </header>
   <div id="tools">
     <button id="b-pen" class="active" onclick="setMode('pen')">✏️ Pen</button>
     <button id="b-erase" onclick="setMode('erase')">🧽 Eraser</button>
     <button id="b-hand" onclick="setMode('hand')">✋ Hand</button>
-    <button onclick="undo()">↩️ Undo</button>
-    <button onclick="clearAll()">🗑️ Clear</button>
-    <button onclick="goHome()">🏠 Home</button>
-    <span id="users"></span>
+    <button id="b-undo" onclick="undo()">↩️ Undo</button>
+    <button id="b-clear" onclick="clearAll()">🗑️ Clear</button>
+    <span id="viewonly" class="hidden">👁 View only</span>
   </div>
-  <div id="stage"><canvas id="c"></canvas></div>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <aside id="panel" class="hidden"></aside>
+  </div>
+</section>
+<div id="toast" class="hidden"></div>
 <script>
 const $ = id => document.getElementById(id);
 const c = $("c"), ctx = c.getContext("2d");
 const stage = $("stage");
-let ox = 0, oy = 0;                  // view offset (pan)
-let ws = null, mode = "pen", drawing = false, panning = false, panLast = null;
-let curId = null, lastCursor = 0;
+let token = sessionStorage.getItem("wb_token");
+let me = null, room = null, you = null, roster = [], onlineEmails = [], maxUsers = 10;
+let ws = null, mode = "pen", canEdit = true;
+let drawing = false, panning = false, panLast = null, curId = null, lastCursor = 0;
+let ox = 0, oy = 0;
 let retry = 0, fails = 0, everOpened = false, shouldReconnect = false;
-const strokes = new Map();           // id -> [points]
-const mine = [];                     // meri strokes (undo ke liye)
-const cursors = new Map();           // email -> {el, x, y}
+const strokes = new Map(), mine = [], cursors = new Map();
 const uid = () => (window.crypto && crypto.randomUUID)
   ? crypto.randomUUID()
   : Date.now().toString(36) + Math.random().toString(36).slice(2);
+let toastTimer;
+function toast(text) {
+  const el = $("toast");
+  el.textContent = text;
+  el.classList.remove("hidden");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add("hidden"), 3000);
+}
+async function api(path, method = "GET", body) {
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = "Bearer " + token;
+  const r = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  let data = null;
+  try { data = await r.json(); } catch (e) {}
+  if (!r.ok) {
+    let msg = (data && data.detail) || "Something went wrong";
+    if (Array.isArray(msg)) msg = "Please check the details you entered";
+    const err = new Error(msg);
+    err.status = r.status;
+    throw err;
+  }
+  return data;
+}
+function show(name) {
+  for (const s of ["auth", "home", "room"]) $(s).classList.toggle("hidden", s !== name);
+}
+/* ---------- login / signup ---------- */
+async function doAuth(isRegister) {
+  const email = $("email").value.trim();
+  const password = $("password").value;
+  $("auth-msg").textContent = "";
+  try {
+    if (isRegister) await api("/auth/register", "POST", { email, password });
+    const res = await api("/auth/login", "POST", { email, password });
+    token = res.access_token;
+    sessionStorage.setItem("wb_token", token);
+    await enterHome();
+  } catch (e) {
+    $("auth-msg").textContent = e.message;
+  }
+}
+function logout() {
+  token = null; me = null;
+  sessionStorage.removeItem("wb_token");
+  show("auth");
+}
+/* ---------- home ---------- */
+async function enterHome() {
+  me = await api("/auth/me");
+  $("me").textContent = me.email;
+  $("home-msg").textContent = "";
+  show("home");
+  loadRooms();
+}
+async function loadRooms() {
+  try {
+    const rooms = await api("/boards");
+    const box = $("rooms");
+    box.innerHTML = "";
+    $("rooms-card").classList.toggle("hidden", rooms.length === 0);
+    for (const r of rooms) {
+      const row = document.createElement("div");
+      row.className = "row";
+      const name = document.createElement("span");
+      name.textContent = r.title;
+      row.append(name);
+      if (me && r.owner_id === me.id) {
+        const code = document.createElement("small");
+        code.textContent = r.join_code;
+        row.append(code);
+      }
+      const btn = document.createElement("button");
+      btn.textContent = "Open";
+      btn.onclick = () => openRoom(r);
+      row.append(btn);
+      box.append(row);
+    }
+  } catch (e) {
+    $("home-msg").textContent = e.message;
+  }
+}
+async function createRoom() {
+  const title = $("room-name").value.trim();
+  if (!title) { $("home-msg").textContent = "Enter a room name"; return; }
+  try {
+    const r = await api("/boards", "POST",
+      { title, default_can_edit: $("room-default-edit").checked });
+    $("room-name").value = "";
+    openRoom(r);
+  } catch (e) {
+    $("home-msg").textContent = e.message;
+  }
+}
+async function joinRoom() {
+  const code = $("join-code").value.trim().toUpperCase();
+  if (!code) { $("home-msg").textContent = "Enter the room code"; return; }
+  try {
+    const r = await api("/boards/join", "POST", { code });
+    $("join-code").value = "";
+    openRoom(r);
+  } catch (e) {
+    $("home-msg").textContent = e.message;
+  }
+}
+/* ---------- room ---------- */
 function setStatus(text, on) {
   $("st").textContent = text;
   $("dot").className = on ? "on" : "";
 }
 function setMode(m) {
   mode = m;
-  for (const k of ["pen", "erase", "hand"])
-    $("b-" + k).classList.toggle("active", k === m);
+  for (const k of ["pen", "erase", "hand"]) $("b-" + k).classList.toggle("active", k === m);
   c.style.cursor = m === "hand" ? "grab" : m === "erase" ? "pointer" : "crosshair";
 }
-function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
+function setCanEdit(v) {
+  canEdit = v;
+  for (const id of ["b-pen", "b-erase", "b-undo", "b-clear"]) $(id).disabled = !v;
+  $("viewonly").classList.toggle("hidden", v);
+  if (!v && mode !== "hand") setMode("hand");
+}
+function clearCursors() {
+  for (const cur of cursors.values()) cur.el.remove();
+  cursors.clear();
+}
+function openRoom(r) {
+  room = r; you = null; roster = []; onlineEmails = [];
+  strokes.clear(); mine.length = 0; ox = 0; oy = 0;
+  clearCursors();
+  $("room-title").textContent = r.title;
+  $("code-chip").classList.add("hidden");
+  $("online-n").textContent = "0";
+  $("panel").classList.add("hidden");
+  setStatus("connecting…", false);
+  setCanEdit(true);
+  setMode("pen");
+  show("room");
+  fit();
+  shouldReconnect = true; retry = 0; fails = 0; everOpened = false;
+  openSocket();
+}
+function leaveRoom() {
+  shouldReconnect = false;
+  if (ws) { ws.onclose = null; ws.close(); ws = null; }
+  clearCursors();
+  $("panel").classList.add("hidden");
+  show("home");
+  loadRooms();
+}
+async function copyCode() {
+  const code = $("code-chip").dataset.code;
+  try { await navigator.clipboard.writeText(code); toast("Room code copied"); }
+  catch (e) { toast("Room code: " + code); }
+}
+function togglePanel() {
+  $("panel").classList.toggle("hidden");
+  renderPanel();
+}
+function renderPanel() {
+  const p = $("panel");
+  if (p.classList.contains("hidden") || !you) return;
+  p.innerHTML = "";
+  const h = document.createElement("h4");
+  h.textContent = `People (${onlineEmails.length} online, max ${maxUsers})`;
+  p.append(h);
+  for (const m of roster) {
+    const row = document.createElement("div");
+    row.className = "person";
+    const dot = document.createElement("span");
+    dot.className = "pdot" + (onlineEmails.includes(m.email) ? " on" : "");
+    const name = document.createElement("span");
+    name.className = "pname";
+    name.textContent = m.email + (m.is_owner ? " (host)" : "") + (m.user_id === you.user_id ? " (you)" : "");
+    row.append(dot, name);
+    if (you.is_owner && !m.is_owner) {
+      const label = document.createElement("label");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = m.can_edit;
+      cb.onchange = () => send({ type: "set_perm", user_id: m.user_id, can_edit: cb.checked });
+      label.append(cb, document.createTextNode("can draw"));
+      row.append(label);
+    } else if (!m.is_owner) {
+      const tag = document.createElement("small");
+      tag.textContent = m.can_edit ? "can draw" : "view only";
+      row.append(tag);
+    }
+    p.append(row);
+  }
+}
 /* ---------- drawing ---------- */
+function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
 function line(a, b) {
   ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
 }
@@ -136,17 +373,18 @@ function eraseAt(p) {
   }
 }
 function undo() {
+  if (!canEdit) return;
   const id = mine.pop();
   if (!id) return;
   removeStroke(id);
   send({ type: "delete", id });
 }
 function clearAll() {
+  if (!canEdit) return;
   if (!confirm("Clear the whole board for everyone?")) return;
   strokes.clear(); mine.length = 0; redraw();
   send({ type: "clear" });
 }
-/* ---------- poori screen + pan ---------- */
 function applyView() {
   const dpr = window.devicePixelRatio || 1;
   ctx.setTransform(dpr, 0, 0, dpr, -ox * dpr, -oy * dpr);
@@ -161,7 +399,6 @@ function fit() {
   c.height = Math.max(1, Math.floor(stage.clientHeight * dpr));
   applyView();
 }
-function goHome() { ox = 0; oy = 0; applyView(); }
 new ResizeObserver(fit).observe(stage);
 window.addEventListener("resize", fit);
 c.addEventListener("wheel", e => {
@@ -198,34 +435,28 @@ function sendCursor(p) {
   send({ type: "cursor", x: p.x, y: p.y });
 }
 /* ---------- websocket ---------- */
-function connect() {
-  if (ws) { ws.onclose = null; ws.close(); }
-  shouldReconnect = true; retry = 0; fails = 0; everOpened = false;
-  openSocket();
-}
 function openSocket() {
-  const t = $("token").value.trim();
-  const id = $("board").value.trim();
-  const port = new URLSearchParams(location.search).get("port") || 8000;
-  const host = location.hostname || "127.0.0.1";
-  ws = new WebSocket(`ws://${host}:${port}/ws/boards/${id}?token=${encodeURIComponent(t)}`);
-  ws.onopen = () => { everOpened = true; retry = 0; fails = 0; setStatus("connected", true); };
+  const port = new URLSearchParams(location.search).get("port");
+  const host = port ? `${location.hostname}:${port}` : location.host;
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${proto}://${host}/ws/boards/${room.id}?token=${encodeURIComponent(token)}`);
+  ws.onopen = () => { everOpened = true; retry = 0; fails = 0; setStatus("Connected", true); };
   ws.onclose = ev => {
+    if (!shouldReconnect) return;
     if (ev.code === 1008) {
-      shouldReconnect = false;
-      setStatus("rejected (no access / too many messages)", false);
+      toast("No access to this room, or too many messages");
+      leaveRoom();
       return;
     }
-    if (!shouldReconnect) { setStatus("disconnected", false); return; }
     if (!everOpened && ++fails >= 3) {
-      shouldReconnect = false;
-      setStatus("could not connect: check token, board id, server", false);
+      toast("Could not connect. Please log in again.");
+      leaveRoom();
       return;
     }
-    const delay = Math.min(1000 * 2 ** retry, 10000);
+    const delay = Math.min(1000 * 2 * retry, 10000);
     retry++;
-    setStatus(`reconnecting in ${delay / 1000}s...`, false);
-    setTimeout(openSocket, delay);
+    setStatus(`reconnecting in ${delay / 1000}s…`, false);
+    setTimeout(() => { if (shouldReconnect) openSocket(); }, delay);
   };
   ws.onmessage = e => {
     const m = JSON.parse(e.data);
@@ -235,16 +466,36 @@ function openSocket() {
     else if (m.type === "init") {
       strokes.clear();
       for (const [sid, pts] of Object.entries(m.strokes)) strokes.set(sid, pts);
+      you = m.you;
+      maxUsers = m.room.max_users;
+      if (m.room.code) {
+        const chip = $("code-chip");
+        chip.textContent = "Code: " + m.room.code;
+        chip.dataset.code = m.room.code;
+        chip.classList.remove("hidden");
+      }
+      setCanEdit(you.can_edit);
       redraw();
     }
     else if (m.type === "presence") {
-      $("users").textContent = "Online: " + m.users.join(", ");
+      onlineEmails = m.users;
+      $("online-n").textContent = m.users.length;
       pruneCursors(m.users);
+      renderPanel();
+    }
+    else if (m.type === "roster") {
+      roster = m.members;
+      const mineEntry = you && roster.find(x => x.user_id === you.user_id);
+      if (mineEntry && !mineEntry.is_owner && mineEntry.can_edit !== canEdit) {
+        setCanEdit(mineEntry.can_edit);
+        toast(mineEntry.can_edit ? "The host allowed you to draw" : "The host switched you to view-only");
+      }
+      renderPanel();
     }
     else if (m.type === "cursor") showCursor(m.u, m.x, m.y);
+    else if (m.type === "error") { toast(m.message); leaveRoom(); }
   };
 }
-/* ---------- mouse + touch + pen ---------- */
 c.addEventListener("pointerdown", e => {
   c.setPointerCapture(e.pointerId);
   if (mode === "hand") {
@@ -253,6 +504,7 @@ c.addEventListener("pointerdown", e => {
     c.style.cursor = "grabbing";
     return;
   }
+  if (!canEdit) return;
   drawing = true;
   const p = pos(e);
   if (mode === "erase") { eraseAt(p); return; }
@@ -282,7 +534,19 @@ function endStroke() {
 }
 c.addEventListener("pointerup", endStroke);
 c.addEventListener("pointercancel", endStroke);
-fit();
+/* ---------- start ---------- */
+$("password").addEventListener("keydown", e => { if (e.key === "Enter") doAuth(false); });
+$("room-name").addEventListener("keydown", e => { if (e.key === "Enter") createRoom(); });
+$("join-code").addEventListener("keydown", e => { if (e.key === "Enter") joinRoom(); });
+$("join-code").addEventListener("input", e => { e.target.value = e.target.value.toUpperCase(); });
+async function boot() {
+  if (token) {
+    try { await enterHome(); return; }
+    catch (e) { token = null; sessionStorage.removeItem("wb_token"); }
+  }
+  show("auth");
+}
+boot();
 </script>
 </body>
 </html>

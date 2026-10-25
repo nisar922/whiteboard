@@ -59,3 +59,8 @@ async def get_current_user(
     if not user:
         raise HTTPException(401, "User not found")
     return user
+
+@router.get("/me", response_model=UserOut)
+async def me(user: User = Depends(get_current_user)):
+    return user
+
