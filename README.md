@@ -1,6 +1,11 @@
 # Real-Time Collaborative Whiteboard
+YOUR-LINK - https://whiteboard-19g8.onrender.com
 A Miro-style whiteboard backend where multiple users draw together on the same board in real time. Built with FastAPI, WebSockets, Redis and PostgreSQL.
 ## Features
+- Login page and a Home screen with **Create room** and **Join room** (6-character room code)
+- Maximun **10 people per room**
+- **Host control:** the room created decides who can draw and who is view-only ,per person , and can change it live(enforced on the server)
+- Header show only the room name, connection status and how many people are online
 - Register and login with JWT authentication (bcrypt password hashing)
 - Create boards and invite people with a 6-character **room code**, or share by email
 - Live drawing sync between users over WebSockets
@@ -11,7 +16,7 @@ A Miro-style whiteboard backend where multiple users draw together on the same b
 - Rate limiting on login and join-code attempts, plus per-connection WebSocket limits
 - Full-screen responsive canvas with touch support, pan and a hand tool
 - Automatic client reconnect with exponential backoff
-- 15 automated tests (pytest)
+- 21 automated tests (pytest)
 ## Architecture
 ```mermaid
 flowchart LR
@@ -37,10 +42,10 @@ python -m uvicorn main:app --reload
 ```
 API docs open at http://127.0.0.1:8000/docs
 ## How to use
-1. Open `/docs`, call `POST /auth/register`, then `POST /auth/login` and copy the `access_token`.
-2. Click **Authorize**, paste the token, then `POST /boards` to create a board. Note its `id` and `join_code`.
-3. Open `client/index.html` in a browser, paste the token and board id, click **Connect** and start drawing.
-4. A second user registers, logs in, calls `POST /boards/join` with the room code, and connects from another tab or browser with their own token.
+1. Open the app, create an account and log in.
+2. **Create room** (choose whether participants can draw by default) and share the room code.
+3. Others log in and use **Join room** with the code.
+4. The host opens the people panel to turn drawing on or off for each person..
 ## API overview
 | Method | Endpoint | Description |
 |---|---|---|
